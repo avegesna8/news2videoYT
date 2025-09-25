@@ -1,0 +1,45 @@
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Dependencies
+*.egg
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Build / packaging
+build/
+dist/
+*.spec
+
+# IDEs / editors
+.vscode/
+.idea/
+
+# Your project’s output
+app/images/
+images/
