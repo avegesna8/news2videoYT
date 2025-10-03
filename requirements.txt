@@ -1,0 +1,20 @@
+# Core dependencies
+openai
+requests
+pydantic
+python-dotenv
+langchain
+
+# Web scraping
+beautifulsoup4
+
+# Standard library extensions (usually included with Python)
+# typing - built-in
+# os - built-in
+# time - built-in
+# shutil - built-in
+# random - built-in
+# urllib.parse - built-in
+# json - built-in
+# datetime - built-in
+# re - built-in

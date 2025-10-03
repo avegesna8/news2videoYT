@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from typing import List, Dict
 import os
 import requests
 
@@ -21,18 +22,19 @@ def get_nfl_links():
 
         data = response.json()
 
-        links = []
+        results: List[Dict[str, str]] = []
         for item in data.get("body", []):
             link = item.get("link")
+            title = item.get("title")
             if "espn" in link:
-                links.append(link)
-        return links
+                results.append({"url": link, "title": title})
+        return results
     except requests.exceptions.RequestException as e:
         print("Error Fetching NFL Links:", e)
         return []
 
 #CLI Test
 if __name__ == "__main__":
-    links = get_nfl_links()
-    for i, link in enumerate(links):
-        print(f"Link {i}: {link}")
+    items = get_nfl_links()
+    for i, it in enumerate(items, 1):
+        print(f"{i}. {it['title']}\n   {it['url']}\n")
