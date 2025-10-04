@@ -65,3 +65,7 @@ youtube_token.json
 *.avi
 *.mov
 *.mkv
+
+# Asset files (too large for git)
+app/assets/
+assets/
