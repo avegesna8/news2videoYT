@@ -21,6 +21,12 @@ srt>=3.5.0
 # Additional utilities
 tqdm>=4.65.0
 
+# Social Media APIs
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=1.0.0
+google-auth>=2.20.0
+
 # Standard library extensions (usually included with Python)
 # typing - built-in
 # os - built-in

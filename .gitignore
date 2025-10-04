@@ -40,6 +40,27 @@ dist/
 .vscode/
 .idea/
 
-# Your project’s output
+# Your project's output
 app/images/
 images/
+
+# Generated content folders
+app/videos/
+app/audio/
+app/srt/
+videos/
+audio/
+srt/
+
+# API credentials and tokens
+youtube_credentials.json
+youtube_token.json
+*.json
+
+# Large media files
+*.mp4
+*.wav
+*.mp3
+*.avi
+*.mov
+*.mkv
