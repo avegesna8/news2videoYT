@@ -47,6 +47,7 @@ images/
 # Generated content folders
 app/videos/
 app/audio/
+app/assets/
 app/srt/
 videos/
 audio/
