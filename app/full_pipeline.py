@@ -19,7 +19,7 @@ from datetime import datetime
 
 # Import all our modules
 from get_news_links import get_nfl_links
-from espn_scraper import get_link, parse_espn_article_html
+from espn_scraper import get_link, parse_espn_article_html, save_images
 from llm_functions import select_top_three_headlines, generate_comedic_script
 from audio_generator import generate_audio_from_runpod
 from video_generator import generate_video
@@ -87,6 +87,24 @@ def run_full_pipeline(max_articles: int = 3, output_name: str = None, ref_audio_
                 response = get_link(headline['url'])
                 article_data = parse_espn_article_html(response.text, response.url)
                 
+                # Save article images
+                article_images = []
+                if article_data.get('images'):
+                    print(f"  🖼️  Found {len(article_data['images'])} images, saving...")
+                    images_folder = f"app/images/article_{i}"
+                    save_images(article_data['images'], images_folder)
+                    
+                    # Get saved image paths
+                    if os.path.exists(images_folder):
+                        for img_file in os.listdir(images_folder):
+                            if img_file.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                                article_images.append(os.path.join(images_folder, img_file))
+                        print(f"  🖼️  Saved {len(article_images)} images to {images_folder}")
+                    else:
+                        print("  ⚠️  No images folder created")
+                else:
+                    print("  ⚠️  No images found in article")
+                
                 # Generate comedic script
                 print("  ✍️  Generating comedic script...")
                 script_result = generate_comedic_script(article_data)
@@ -109,16 +127,20 @@ def run_full_pipeline(max_articles: int = 3, output_name: str = None, ref_audio_
                 print(f"  🎧 Audio saved: {audio_path}")
                 results["audio_files"].append(audio_path)
                 
-                # Generate video with subtitles
-                print("  🎬 Generating video with subtitles...")
-                video_output_name = f"{output_name}_article_{i}"
-                generate_video(audio_path, script, video_output_name)
+                # Generate video with subtitles and cycling images
+                print("  🎬 Generating video with subtitles and cycling images...")
                 
-                # Get the generated video files
-                from video_generator import OUT_VIDEO, OUT_VIDEO_BURNED, OUT_VIDEO_SOFT, OUT_SRT
-                video_files = [OUT_VIDEO, OUT_VIDEO_BURNED, OUT_VIDEO_SOFT]
+                # Create a safe filename from the article title
+                safe_title = "".join(c for c in headline['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                safe_title = safe_title.replace(' ', '_')[:50]  # Limit length and replace spaces
+                video_output_name = f"{output_name}_{safe_title}"
+                
+                generated_files = generate_video(audio_path, script, video_output_name, article_images)
+                
+                # Get the generated video files from the returned dictionary
+                video_files = [generated_files["video"], generated_files["video_burned"], generated_files["video_soft"]]
                 results["video_files"].extend(video_files)
-                results["srt_files"].append(OUT_SRT)
+                results["srt_files"].append(generated_files["srt"])
                 
                 print(f"  ✅ Video generated: {video_output_name}")
                 
@@ -186,6 +208,24 @@ def run_single_article_pipeline(article_url: str, output_name: str = None, ref_a
         response = get_link(article_url)
         article_data = parse_espn_article_html(response.text, response.url)
         
+        # Save article images
+        article_images = []
+        if article_data.get('images'):
+            print(f"🖼️  Found {len(article_data['images'])} images, saving...")
+            images_folder = "app/images/single_article"
+            save_images(article_data['images'], images_folder)
+            
+            # Get saved image paths
+            if os.path.exists(images_folder):
+                for img_file in os.listdir(images_folder):
+                    if img_file.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                        article_images.append(os.path.join(images_folder, img_file))
+                print(f"🖼️  Saved {len(article_images)} images to {images_folder}")
+            else:
+                print("⚠️  No images folder created")
+        else:
+            print("⚠️  No images found in article")
+        
         # Generate comedic script
         print("✍️  Generating comedic script...")
         script_result = generate_comedic_script(article_data)
@@ -203,14 +243,20 @@ def run_single_article_pipeline(article_url: str, output_name: str = None, ref_a
         print(f"🎧 Audio saved: {audio_path}")
         results["audio_file"] = audio_path
         
-        # Generate video with subtitles
-        print("🎬 Generating video with subtitles...")
-        generate_video(audio_path, script, output_name)
+        # Generate video with subtitles and cycling images
+        print("🎬 Generating video with subtitles and cycling images...")
         
-        # Get the generated files
-        from video_generator import OUT_VIDEO, OUT_VIDEO_BURNED, OUT_VIDEO_SOFT, OUT_SRT
-        results["video_files"] = [OUT_VIDEO, OUT_VIDEO_BURNED, OUT_VIDEO_SOFT]
-        results["srt_file"] = OUT_SRT
+        # Create a safe filename from the article title
+        safe_title = "".join(c for c in article_data.get('title', 'article') if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_title = safe_title.replace(' ', '_')[:50]  # Limit length and replace spaces
+        if not output_name:
+            output_name = f"single_article_{safe_title}"
+        
+        generated_files = generate_video(audio_path, script, output_name, article_images)
+        
+        # Get the generated files from the returned dictionary
+        results["video_files"] = [generated_files["video"], generated_files["video_burned"], generated_files["video_soft"]]
+        results["srt_file"] = generated_files["srt"]
         
         print("\n" + "=" * 50)
         print("🎉 Single Article Pipeline Complete!")

@@ -140,15 +140,78 @@ def write_srt_from_text(text: str, audio_len: float, path: str, mode: str = "phr
             f.write(f"{idx}\n{srt_timestamp(start)} --> {srt_timestamp(end)}\n{line}\n\n")
 
 
-# ---------- 1) build the base video ----------
-def build_video(audio_file: str = None, char_file: str = None, bg_file: str = None):
+# ---------- image cycling helpers ----------
+def create_image_cycle_filter(images: list, video_duration: float, output_width: int = 400, output_height: int = 300):
     """
-    Build video with specified audio file.
+    Create FFmpeg filter for cycling through images evenly throughout video duration.
+    
+    Args:
+        images: List of image file paths
+        video_duration: Duration of the video in seconds
+        output_width: Width of the image overlay
+        output_height: Height of the image overlay
+    
+    Returns:
+        str: FFmpeg filter string for image cycling
+    """
+    if not images:
+        return ""
+    
+    num_images = len(images)
+    duration_per_image = video_duration / num_images
+    
+    # Create image inputs and scaling filters
+    image_filters = []
+    for i, img_path in enumerate(images):
+        if os.path.exists(img_path):
+            # Scale and position each image (input index starts from 3 for article images)
+            image_filters.append(
+                f"[{i+3}:v]scale={output_width}:{output_height}:force_original_aspect_ratio=decrease,"
+                f"pad={output_width}:{output_height}:(ow-iw)/2:(oh-ih)/2:black,"
+                f"fade=t=in:st=0:d=0.5:alpha=1,"
+                f"fade=t=out:st={duration_per_image-0.5}:d=0.5:alpha=1[img{i}]"
+            )
+    
+    # Create cycling overlay filter
+    if len(image_filters) == 1:
+        overlay_filter = f"[vbg_with_char][img0]overlay=x=W-w-20:y=20:enable='between(t,0,{video_duration})'[vout]"
+    else:
+        # Chain overlays for multiple images
+        overlay_parts = []
+        for i in range(num_images):
+            start_time = i * duration_per_image
+            end_time = (i + 1) * duration_per_image
+            
+            if i == 0:
+                input_label = "[vbg_with_char]"
+            else:
+                input_label = f"[v{i-1}]"
+            
+            output_label = f"[v{i}]" if i < num_images - 1 else "[vout]"
+            
+            overlay_parts.append(
+                f"{input_label}[img{i}]overlay=x=W-w-20:y=20:enable='between(t,{start_time},{end_time})'{output_label}"
+            )
+        
+        overlay_filter = ",".join(overlay_parts)
+    
+    # Combine all filters
+    if image_filters:
+        all_filters = ",".join(image_filters) + "," + overlay_filter
+    else:
+        all_filters = overlay_filter
+    return all_filters
+
+# ---------- 1) build the base video ----------
+def build_video(audio_file: str = None, char_file: str = None, bg_file: str = None, article_images: list = None):
+    """
+    Build video with specified audio file and cycling article images.
     
     Args:
         audio_file: Path to audio file (required)
         char_file: Path to character image (if None, uses default)
         bg_file: Path to background video (if None, uses default)
+        article_images: List of article image paths to cycle through
     """
     # Set audio file
     if audio_file is None:
@@ -178,6 +241,13 @@ def build_video(audio_file: str = None, char_file: str = None, bg_file: str = No
         fc.append("[0:v]format=yuva444p,setsar=1[vbg]")
 
     inputs += ["-i", audio_file, "-loop", "1", "-i", char_file]
+    
+    # Add article images as inputs
+    if article_images:
+        for img_path in article_images:
+            if os.path.exists(img_path):
+                inputs += ["-loop", "1", "-i", img_path]
+                print(f"Added image input: {img_path}")
 
     char_px = int(WIDTH * CHAR_WIDTH_RATIO)
     fc.append(
@@ -185,17 +255,37 @@ def build_video(audio_file: str = None, char_file: str = None, bg_file: str = No
         f"colorchannelmixer=aa=0.96,"
         f"fade=t=in:st=0:d=0.25:alpha=1[char]"
     )
-    fc.append(
+    
+    # Get video duration for image cycling
+    video_duration = ffprobe_duration_seconds(audio_file)
+    
+    # Create character overlay
+    char_overlay = (
         "[vbg][char]overlay="
         f"x=(W-w)/2:y=H-h-{BOTTOM_MARGIN}+{BOB_PIXELS}*sin(2*PI*t*{BOB_HZ}):"
-        "shortest=1,format=yuv420p[v]"
+        "shortest=1[vbg_with_char]"
     )
+    fc.append(char_overlay)
+    
+    # Add article images cycling if available
+    if article_images and any(os.path.exists(img) for img in article_images):
+        print(f"Creating image cycle for {len(article_images)} images over {video_duration:.1f} seconds")
+        image_filter = create_image_cycle_filter(article_images, video_duration)
+        if image_filter:
+            fc.append(image_filter)
+        else:
+            fc.append("[vbg_with_char]format=yuv420p[v]")
+    else:
+        fc.append("[vbg_with_char]format=yuv420p[v]")
 
+    # Determine the correct output label based on whether we have article images
+    output_label = "[vout]" if (article_images and any(os.path.exists(img) for img in article_images)) else "[v]"
+    
     cmd = (
         [FFMPEG, "-nostdin", "-y"] +
         inputs + [
             "-filter_complex", "; ".join(fc),
-            "-map", "[v]", "-map", "1:a",
+            "-map", output_label, "-map", "1:a",
             "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
             "-c:a", "aac",
             "-shortest",
@@ -252,14 +342,15 @@ def add_subtitles(text: str, audio_file: str = None):
 
 
 # ---------- main workflow functions ----------
-def generate_video(audio_file: str, script_text: str, output_name: str = None):
+def generate_video(audio_file: str, script_text: str, output_name: str = None, article_images: list = None):
     """
-    Generate a complete video from an audio file and script text.
+    Generate a complete video from an audio file and script text with cycling article images.
     
     Args:
         audio_file: Path to the audio file (e.g., "audio/audio_20251004_132034.wav")
         script_text: The script text for subtitles (should match the audio content)
         output_name: Custom name for output files (optional)
+        article_images: List of article image paths to cycle through
     """
     global OUT_VIDEO, OUT_VIDEO_BURNED, OUT_VIDEO_SOFT, OUT_SRT
     
@@ -270,12 +361,25 @@ def generate_video(audio_file: str, script_text: str, output_name: str = None):
         OUT_SRT = os.path.join(SRT_DIR, f"{output_name}_subs.srt")
     
     print(f"Generating video from audio: {audio_file}")
-    build_video(audio_file=audio_file)
+    if article_images:
+        print(f"Using {len(article_images)} article images for cycling")
+    build_video(audio_file=audio_file, article_images=article_images)
     add_subtitles(script_text, audio_file=audio_file)
+    
+    # Return the actual file paths that were generated
+    generated_files = {
+        "video": OUT_VIDEO,
+        "video_burned": OUT_VIDEO_BURNED,
+        "video_soft": OUT_VIDEO_SOFT,
+        "srt": OUT_SRT
+    }
+    
     print(f"Video generation complete! Output files:")
     print(f"  - {OUT_VIDEO}")
     print(f"  - {OUT_VIDEO_BURNED}")
     print(f"  - {OUT_VIDEO_SOFT}")
+    
+    return generated_files
 
 def generate_video_from_script(script_text: str, output_name: str = None, ref_audio_path: str = None):
     """
